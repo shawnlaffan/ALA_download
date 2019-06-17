@@ -1,0 +1,109 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Example set of steps to download data from the ALA and then filter them based on QA/QC fields.
+
+Adapted from code written by Nick Dosremedios and Hugh Burley
+
+
+```{r}
+library(ALA4R)
+library(stringr)
+library(rgdal) 
+
+ala_config (caching="on")
+in_prj  <- paste0("+init=epsg:4326") # WGS84 in decimal degrees
+out_prj <-paste0("+init=epsg:3577") # Albers equal area projection for Australia
+failed <- c()
+
+#  rough bounding box for Australia, edit as appropriate
+wkt_text <- "POLYGON((154 -43.74,154 -9,112.9 -9,112.9 -43.74,154 -43.74))"
+
+#  these are the colnames we want in the output
+subset_colnames <- c("id", "x", "y", "scientificName", "family", "genus", "species", "rank")
+
+```
+
+```{r}
+
+#  Edit as needed.  Some can be case sensitive, so check the ALA website to be certain.
+taxon_list <- list (
+#   "Araneae"     = "order:ARANEAE",
+#   "Daviesia"    = c("genus:Daviesia"),
+#   "Acacia"      = c("genus:Acacia"),
+#   
+   "Amphibians" = c("family:Hylidae", "family:Myobatrachidae", "family:Microhylidae")
+)
+
+taxon_list
+```
+
+Create the target directories and download the data
+
+```{r}
+
+for (dir in names(taxon_list)) {
+  if (!dir.exists(dir)) {
+    print (paste("Creating directory", dir))
+    dir.create(dir, showWarnings = TRUE)
+    #print (dir.exists(dir))
+  }
+
+  collated_df = data.frame()
+  
+  search_term_vec = taxon_list[[dir]]
+  for (i in 1:length(search_term_vec)) { 
+    search_term = search_term_vec[i]
+    
+    rank  = NA
+    taxon = search_term
+    if (sum(grep (pattern = ":", x = search_term))) { # hell clunky
+      parts = str_split(search_term, pattern = ":")
+      rank  = parts[[1]][1]
+      taxon = parts[[1]][2]
+    }
+      
+    rds_fname = paste0(dir, "/", taxon, "_ALA_records.rds")
+    csv_fname = paste0(dir, "/", taxon, ".csv")
+    
+    #  skip existing files
+    if (file.exists (csv_fname)) {
+      print (paste (taxon, ": csv file exists, skipping download"))
+
+      if (length(search_term_vec) > 0) {
+        
+        ala = readRDS(rds_fname)
+        if (nrow(ala)) {
+          subset = ala[,subset_colnames]
+          if (nrow(collated_df) == 0) {
+            collated_df = subset
+          } else {
+            collated_df = rbind (collated_df, subset)
+          }
+        }
+      }
+      #  go to next iteration of loop
+      next
+    }
+
+    print (paste0 ("Downloading data for ", taxon))
+    print (paste0 ("Search term is ", search_term))
+    
+    ala = data.frame()
+    
+    ala = occurrences(taxon=search_term, wkt=wkt_text, download_reason_id=7)
+  
+    print (dim (ala$data))
+  
+    if(is.na(ala) || !is.data.frame(ala$data)){
+      print (paste("unable to download records for", taxon))
+      failed = append(failed, taxon)
+      next
+    }
+  }
+}
+    
+```
+    
