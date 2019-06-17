@@ -5,21 +5,44 @@ output: html_notebook
 
 Example set of steps to download data from the ALA and then filter them based on QA/QC fields.
 
-Adapted from code written by Nick Dosremedios and Hugh Burley
+Adapted from code used for Cassis, Laffan and Ebach REF.
+
+Originally adapted from original code written by Nick Dosremedios and Hugh Burley.
 
 
 ```{r}
 library(ALA4R)
 library(stringr)
 library(rgdal) 
+```
 
+Configuration section
+
+```{r}
 ala_config (caching="on")
 in_prj  <- paste0("+init=epsg:4326") # WGS84 in decimal degrees
 out_prj <-paste0("+init=epsg:3577") # Albers equal area projection for Australia
 failed <- c()
 
-#  rough bounding box for Australia, edit as appropriate
-wkt_text <- "POLYGON((154 -43.74,154 -9,112.9 -9,112.9 -43.74,154 -43.74))"
+#  Define a bounding box.
+#  This is awkward and inefficient - need a better way, prob using a list
+bbox_template <- "POLYGON((bb_e bb_s, bb_e bb_n, bb_w bb_n, bb_w bb_s, bb_e bb_s))"
+bbox = bbox_template
+#  rough bounding box for Australia as WKT format, edit as appropriate
+bb_e <-  154
+bb_w <-  112.9
+bb_n <- -9
+bb_s <- -43.74
+#  approx NSW for tests
+bb_e <-  153
+bb_w <-  140
+bb_n <- -28
+bb_s <- -37
+bbox <- gsub ("bb_e", bb_e, bbox)
+bbox <- gsub ("bb_w", bb_w, bbox)
+bbox <- gsub ("bb_n", bb_n, bbox)
+bbox <- gsub ("bb_s", bb_s, bbox)
+
 
 #  these are the colnames we want in the output
 subset_colnames <- c("id", "x", "y", "scientificName", "family", "genus", "species", "rank")
@@ -34,13 +57,15 @@ taxon_list <- list (
 #   "Daviesia"    = c("genus:Daviesia"),
 #   "Acacia"      = c("genus:Acacia"),
 #   
-   "Amphibians" = c("family:Hylidae", "family:Myobatrachidae", "family:Microhylidae")
+   #"Amphibians" = c("family:Hylidae", "family:Myobatrachidae", "family:Microhylidae")
+  "Amphibians" = c("family:Hylidae")
 )
 
 taxon_list
 ```
 
-Create the target directories and download the data
+Create the target directories and download the data.
+Note that the directories will be in your current working directory.  
 
 ```{r}
 
@@ -59,7 +84,7 @@ for (dir in names(taxon_list)) {
     
     rank  = NA
     taxon = search_term
-    if (sum(grep (pattern = ":", x = search_term))) { # hell clunky
+    if (sum(grep (pattern = ":", x = search_term))) { # hell clunky way of finding a colon
       parts = str_split(search_term, pattern = ":")
       rank  = parts[[1]][1]
       taxon = parts[[1]][2]
@@ -92,8 +117,8 @@ for (dir in names(taxon_list)) {
     print (paste0 ("Search term is ", search_term))
     
     ala = data.frame()
-    
-    ala = occurrences(taxon=search_term, wkt=wkt_text, download_reason_id=7)
+    # browser()
+    ala = occurrences(taxon=search_term, wkt=bbox, download_reason_id=7)
   
     print (dim (ala$data))
   
@@ -102,8 +127,115 @@ for (dir in names(taxon_list)) {
       failed = append(failed, taxon)
       next
     }
+
+    #  filter valid and non-empty data frames
+    if (nrow(ala$data) > 0) {
+      # Remove records missing Lat/Long information
+      print ("Stripping invalid coords")
+      ala$data = ala$data[!(is.na(ala$data$longitude) | is.na(ala$data$latitude)),]
+      print (paste ("Rows remaining:", nrow(ala$data)))
+      # Remove records that checks indicate are "fatal" (suspicious).
+      print ("Checking assertions")
+      xa <- check_assertions(ala)
+      # Columns of x corresponding to a fatal assertion
+      x_afcols <- names(ala$data) %in% xa$occurColnames[xa$fatal]                      
+      # Rows of x that have a fatal assertion
+      if (sum(x_afcols) > 1) { 
+        x_afrows <- which(apply(ala$data[, x_afcols], 1, any))
+      } else {  
+        x_afrows <- ifelse (
+          sum(x_afcols) == 1, 
+          which(ala$data[, x_afcols]), 
+          NA
+        )
+      }
+      # Reduce to the "clean" data (data rows without fatal assertions)
+      if (!any (is.na (x_afrows))) {
+        ala$data = ala$data[-x_afrows, ] 
+      }
+      
+      #  we only care about the data frame from here
+      ala = ala$data
+      
+      # Restrict this dataset to only those from Australia
+      print ("Excluding records outside bounding box")
+      ala = ala[ala$longitude >= bb_w & ala$longitude <= bb_e
+                & ala$latitude >= bb_s & ala$latitude <= bb_n, ]
+      print (paste ("Rows remaining:", nrow(ala)))
+      # Retain only records with reasonable (<10000m) spatial uncertainty
+      #  (still includes NA's)
+      print ("Subsetting for coord uncertainty constraint")
+      ala <- ala[ala$coordinateUncertaintyInMetres <= 10000 
+                 & !is.na(ala$coordinateUncertaintyInMetres), ]
+      print (paste ("Rows remaining:", nrow(ala)))
+      
+      if (nrow(ala)) {
+        #  add some albers coords
+        coords_ll = ala[c("longitude", "latitude")]
+        #str(coords_ll)
+        coordinates(coords_ll) = coords_ll
+        proj4string(coords_ll) = CRS(in_prj)
+        coords_albers = as.data.frame(spTransform(coords_ll, CRS=CRS(out_prj)))[, 3:4]
+        colnames(coords_albers) = c("x","y")
+        #head(coords_albers)
+        ala$x = coords_albers$x
+        ala$y = coords_albers$y
+      } else {
+        ala$x = numeric()
+        ala$y = numeric()
+      }
+    } else {
+      #browser()
+      ala = ala$data
+      ala$x = numeric()
+      ala$y = numeric()
+      #print (colnames(ala))
+    }
+
+
+    if (nrow(ala) > 0) {
+      subset = ala[,subset_colnames]
+      write.csv(subset, file=csv_fname)
+
+      if (nrow(collated_df) == 0) {
+        collated_df = subset
+      } else {
+        collated_df = rbind (collated_df, subset)
+      }
+    } else {
+      write.csv(data.frame(), file=csv_fname)
+    }
+  
+    saveRDS(ala, file=rds_fname)
   }
+
+  collated_fname = paste0(dir, "/collated.csv")
+  write.csv (collated_df, collated_fname)
 }
     
 ```
+   
+
+You can of course do things like plot the data.
+
+Perhaps try to make something more aesthetically pleasing to the eye.  
+
+```{r}
+
+dir <- names(taxon_list)[1]
+dir 
+
+collated_fname <- paste0(dir, "/collated.csv")
+
+df <- read.csv(collated_fname)
+
+plot (df$x, df$y)
+
+```
+
     
+See if you can edit the code above to use config variables,
+i.e. instead of hard coding the error tolerance at 10000, 
+why not set it in the config section?
+
+You might also wish to plot the data sets beforte they are filtered to get a sense of where the errors are.  
