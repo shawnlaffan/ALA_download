@@ -5,16 +5,19 @@ output: html_notebook
 
 Example set of steps to download data from the ALA and then filter them based on QA/QC fields.
 
-Adapted from code used for Cassis, Laffan and Ebach REF.
+Adapted from code used for:
+Cassis, G., Laffan, S.W. and Ebach, M.C. (2017) Biodiversity and bioregionalisation perspectives on the historical biogeography of Australia. In Ebach, M.C (ed) Handbook of Australasian Biogeography, ch 1, pp 1-16.
+http://www.crcnetbase.com/doi/abs/10.1201/9781315373096-2
 
-Originally adapted from code written by Nick dos Remedios and Hugh Burley.
+That code was in turn adapted from code written by Hugh Burley, who adapted code from Nick dos Remedios at the ALA.
 
 
 ```{r}
 library (ALA4R)
 library (stringr)
 library (rgdal) 
-# library (CoordinateCleaner)  #  needs additional system level libs
+#  needs additional system level libs for this to work
+# library (CoordinateCleaner)
 ```
 
 Configuration section
@@ -27,9 +30,12 @@ if (Sys.getenv("USER") == "jovyan") {
 }
 ala_config (caching="on")
 # ala_config (caching="off")
+ala_config(warn_on_empty=TRUE)
 
+#  search spatialreference.org for coordinate system definitions
 in_prj  <- paste0("+init=epsg:4326") # WGS84 in decimal degrees
 out_prj <- paste0("+init=epsg:3577") # Albers equal area projection for Australia
+
 failed <- c()
 
 #  Define a bounding box.
@@ -42,7 +48,7 @@ bb <- list (e=180, w=-180, n=90, s=-90)
 #  rough bounding box for Australia as WKT format, edit as appropriate
 bb <- list (e=154, w=112.9, n=-9, s=-43.74)
 #  approx NSW for tests
-bb <- list (e=153, w=140, n=-28, s=-37)
+# bb <- list (e=153, w=140, n=-28, s=-37)
 
 bbox = bbox_template
 for (key in names(bb)) {
@@ -69,7 +75,10 @@ taxon_list <- list (
 #   
    #"Amphibians" = c("family:Hylidae", "family:Myobatrachidae", "family:Microhylidae")
   #"Amphibians" = c("family:Hylidae"),
-  "Bats" = c("family:Mollosidae")
+  # "Bats" = c("molossidae")
+  # "Eucs" = c("genus:Corymbia", "genus:Eucalyptus", "genus:Angophora")
+  "Eucs" = c("genus:Corymbia")
+  
 )
 
 taxon_list
@@ -95,12 +104,13 @@ for (dir in names(taxon_list)) {
     
     rank  = NA
     taxon = search_term
-    if (sum(grep (pattern = ":", x = search_term))) { # hell clunky way of finding a colon
+    # hell clunky way of finding a colon
+    if (grepl (pattern = ":", x = search_term, fixed=TRUE)) {
       parts = str_split(search_term, pattern = ":")
       rank  = parts[[1]][1]
       taxon = parts[[1]][2]
     }
-      
+    
     rds_fname = paste0(dir, "/", taxon, "_ALA_records.rds")
     csv_fname = paste0(dir, "/", taxon, ".csv")
     
