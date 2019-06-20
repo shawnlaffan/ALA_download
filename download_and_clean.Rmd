@@ -7,45 +7,53 @@ Example set of steps to download data from the ALA and then filter them based on
 
 Adapted from code used for Cassis, Laffan and Ebach REF.
 
-Originally adapted from original code written by Nick Dosremedios and Hugh Burley.
+Originally adapted from code written by Nick Dosremedios and Hugh Burley.
+
+
 
 
 ```{r}
-library(ALA4R)
-library(stringr)
-library(rgdal) 
+library (ALA4R)
+library (stringr)
+library (rgdal) 
+# library (CoordinateCleaner)  #  needs additional system level libs
 ```
 
 Configuration section
 
 ```{r}
+#  make sure we use a local cache on the EcoCloud
+if (Sys.getenv("USER") == "jovyan") {
+  dir.create("~/ala_cache", showWarnings=FALSE)
+  ala_config(cache_directory="~/ala_cache")
+}
 ala_config (caching="on")
+# ala_config (caching="off")
+
 in_prj  <- paste0("+init=epsg:4326") # WGS84 in decimal degrees
 out_prj <-paste0("+init=epsg:3577") # Albers equal area projection for Australia
 failed <- c()
 
 #  Define a bounding box.
-#  This is awkward and inefficient - need a better way, prob using a list
-bbox_template <- "POLYGON((bb_e bb_s, bb_e bb_n, bb_w bb_n, bb_w bb_s, bb_e bb_s))"
-bbox = bbox_template
+#  The template approach is awkward and inefficient
+#  Need a better way, perhaps using sprintf
+bbox_template <- "POLYGON((e s, e n, w n, w s, e s))"
+
+#  bbox for the globe
+bb <- list (e=180, w=-180, n=90, s=-90)
 #  rough bounding box for Australia as WKT format, edit as appropriate
-bb_e <-  154
-bb_w <-  112.9
-bb_n <- -9
-bb_s <- -43.74
+bb <- list (e=154, w=112.9, n=-9, s=-43.74)
 #  approx NSW for tests
-bb_e <-  153
-bb_w <-  140
-bb_n <- -28
-bb_s <- -37
-bbox <- gsub ("bb_e", bb_e, bbox)
-bbox <- gsub ("bb_w", bb_w, bbox)
-bbox <- gsub ("bb_n", bb_n, bbox)
-bbox <- gsub ("bb_s", bb_s, bbox)
+bb <- list (e=153, w=140, n=-28, s=-37)
+
+bbox = bbox_template
+for (key in names(bb)) {
+  bbox <- gsub (key, bb[key], bbox)
+}
 
 
 #  these are the colnames we want in the output
-subset_colnames <- c("id", "x", "y", "scientificName", "family", "genus", "species", "rank")
+subset_colnames <- c("id", "x", "y", "scientificName", "family", "genus", "species", "rank", "coordinateUncertaintyInMetres")
 
 ```
 
@@ -58,7 +66,8 @@ taxon_list <- list (
 #   "Acacia"      = c("genus:Acacia"),
 #   
    #"Amphibians" = c("family:Hylidae", "family:Myobatrachidae", "family:Microhylidae")
-  "Amphibians" = c("family:Hylidae")
+  #"Amphibians" = c("family:Hylidae"),
+  "Drosera" = "genus:Drosera" 
 )
 
 taxon_list
@@ -159,15 +168,24 @@ for (dir in names(taxon_list)) {
       
       # Restrict this dataset to only those from Australia
       print ("Excluding records outside bounding box")
-      ala = ala[ala$longitude >= bb_w & ala$longitude <= bb_e
-                & ala$latitude >= bb_s & ala$latitude <= bb_n, ]
+      ala = ala[ala$longitude >= bb["w"] & ala$longitude <= bb["e"]
+                & ala$latitude >= bb["s"] & ala$latitude <= bb["n"], ]
       print (paste ("Rows remaining:", nrow(ala)))
       # Retain only records with reasonable (<10000m) spatial uncertainty
       #  (still includes NA's)
       print ("Subsetting for coord uncertainty constraint")
-      ala <- ala[ala$coordinateUncertaintyInMetres <= 10000 
-                 & !is.na(ala$coordinateUncertaintyInMetres), ]
+      ala <- ala[!is.na(ala$coordinateUncertaintyInMetres)
+                 & ala$coordinateUncertaintyInMetres <= 10000 
+                 # & !ala$coordinateUncertaintyInMetres %in% c(1,2,3,4)
+                 , ]
       print (paste ("Rows remaining:", nrow(ala)))
+      
+      
+      #  coordinatecleaner time
+      ##
+      # rl <- clean_dataset(ala)
+      # ala$dataset = ala$species
+      # rl <- clean_dataset(x=ala, lon="longitude", lat="latitude")
       
       if (nrow(ala)) {
         #  add some albers coords
