@@ -7,9 +7,7 @@ Example set of steps to download data from the ALA and then filter them based on
 
 Adapted from code used for Cassis, Laffan and Ebach REF.
 
-Originally adapted from code written by Nick Dosremedios and Hugh Burley.
-
-
+Originally adapted from code written by Nick dos Remedios and Hugh Burley.
 
 
 ```{r}
@@ -31,7 +29,7 @@ ala_config (caching="on")
 # ala_config (caching="off")
 
 in_prj  <- paste0("+init=epsg:4326") # WGS84 in decimal degrees
-out_prj <-paste0("+init=epsg:3577") # Albers equal area projection for Australia
+out_prj <- paste0("+init=epsg:3577") # Albers equal area projection for Australia
 failed <- c()
 
 #  Define a bounding box.
@@ -53,7 +51,11 @@ for (key in names(bb)) {
 
 
 #  these are the colnames we want in the output
-subset_colnames <- c("id", "x", "y", "scientificName", "family", "genus", "species", "rank", "coordinateUncertaintyInMetres")
+subset_colnames <- c(
+  "id",     "x",     "y",       "scientificName",
+  "family", "genus", "species", "rank", 
+  "coordinateUncertaintyInMetres"
+)
 
 ```
 
@@ -67,7 +69,7 @@ taxon_list <- list (
 #   
    #"Amphibians" = c("family:Hylidae", "family:Myobatrachidae", "family:Microhylidae")
   #"Amphibians" = c("family:Hylidae"),
-  "Drosera" = "genus:Drosera" 
+  "Bats" = c("family:Mollosidae")
 )
 
 taxon_list
