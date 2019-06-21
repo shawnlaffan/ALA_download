@@ -264,8 +264,10 @@ plot (df$x, df$y)
 ```
 
     
+Things to try:
+
 See if you can edit the code above to use config variables,
 i.e. instead of hard coding the error tolerance at 10000, 
 why not set it in the config section?
 
-You might also wish to plot the data sets beforte they are filtered to get a sense of where the errors are.  
+You might also wish to plot the data sets before they are filtered to get a sense of where the errors are.  
