@@ -11,11 +11,15 @@ http://www.crcnetbase.com/doi/abs/10.1201/9781315373096-2
 
 That code was in turn adapted from code written by Hugh Burley, who adapted code from Nick dos Remedios at the ALA.
 
+Later additions have cribbed from https://atlasoflivingaustralia.github.io/ALA4R/articles/ALA4R.html
 
 ```{r}
 library (ALA4R)
 library (stringr)
-library (rgdal) 
+library (rgdal)
+library(maps)
+library(mapdata)
+library(dplyr)
 #  needs additional system level libs for this to work
 # library (CoordinateCleaner)
 ```
@@ -23,6 +27,12 @@ library (rgdal)
 Configuration section
 
 ```{r}
+
+#  An email address is needed to download data from the ALA
+email_address <- "peterpan@neverneverland.org"
+email_address <- "shawnlaffan@gmail.com"
+
+
 #  make sure we use a local cache on the EcoCloud
 if (Sys.getenv("USER") == "jovyan") {
   dir.create("~/ala_cache", showWarnings=FALSE)
@@ -60,7 +70,8 @@ for (key in names(bb)) {
 subset_colnames <- c(
   "id",     "x",     "y",       "scientificName",
   "family", "genus", "species", "rank", 
-  "coordinateUncertaintyInMetres"
+  "coordinateUncertaintyInMetres",
+  "longitude", "latitude"
 )
 
 ```
@@ -139,7 +150,12 @@ for (dir in names(taxon_list)) {
     
     ala = data.frame()
     # browser()
-    ala = occurrences(taxon=search_term, wkt=bbox, download_reason_id=7)
+    ala = occurrences(
+      taxon=search_term, 
+      wkt=bbox, 
+      download_reason_id=7, 
+      email = email_address
+    )
   
     print (dim (ala$data))
   
@@ -259,7 +275,82 @@ collated_fname <- paste0(dir, "/collated.csv")
 
 df <- read.csv(collated_fname)
 
-plot (df$x, df$y)
+# plot (df$x, df$y)
+
+
+
+```
+
+Calculate a sinple gridded species richness estimate.  
+
+This code is directly adapted frm the ALA4R examples.  
+https://atlasoflivingaustralia.github.io/ALA4R/articles/ALA4R.html
+
+
+```{r}
+xgridded <- collated_df %>%
+    ## discard genus- and higher-level records
+    dplyr::filter(rank %in%
+                  c("species")) %>%
+
+    ## bin into 0.5-degree bins
+    mutate(longitude=round(longitude*2)/2, latitude=round(latitude*2)/2) %>%
+
+    ## average environmental vars within each bin
+    # group_by(longitude,latitude) %>%
+    # mutate(precipitationAnnual=mean(precipitationAnnual, na.rm=TRUE),
+    #        temperatureAnnualMaxMean=mean(temperatureAnnualMaxMean, na.rm=TRUE)) %>%
+
+    ## subset to vars of interest
+    dplyr::select(longitude, latitude, scientificName
+                  # , precipitationAnnual,
+                  # temperatureAnnualMaxMean
+                  ) %>%
+
+    ## take one row per cell per species (presence)
+    distinct() %>%
+  
+    #  group by coordinates
+    group_by (longitude, latitude) %>%
+
+    ## calculate species richness
+    mutate(richness=n()) %>%
+
+    ## convert to wide format (sites by species)
+    mutate(present=1) %>%
+    do(tidyr::spread(data=., key=scientificName, value=present, fill=0)) %>%
+    ungroup()
+
+## where a species was not present, it will have NA: convert these to 0
+sppcols <- setdiff(names(xgridded),
+                   c("longitude", "latitude",
+                     # "precipitationAnnual", "temperatureAnnualMaxMean",
+                     "richness"))
+xgridded <- xgridded %>% mutate_at(sppcols, function(z) ifelse(is.na(z), 0, z))
+
+```
+    
+Plot by latitude.
+
+```{r}
+library(ggplot2)
+ggplot(xgridded, aes(latitude, richness)) + geom_point() + theme_bw()
+ggplot(xgridded, aes(longitude, richness)) + geom_point() + theme_bw()
+
+
+```
+
+Plot a basic map of species richness.  People with skills in R plotting will be able to do a better job than this.
+
+
+```{r}
+#  grid it up and plot richness patterns
+
+map("worldHires", "Australia", xlim=c(105, 155), ylim=c(-45, -10), col="gray90", fill=TRUE)
+palette (terrain.colors(max(xgridded$richness)/3))
+with(xgridded, points(longitude, latitude, pch=21, 
+                      col=richness, bg=richness,
+                      cex=0.75))
 
 ```
 
