@@ -321,7 +321,7 @@ xgridded <- xgridded %>% mutate_at(sppcols, function(z) ifelse(is.na(z), 0, z))
 
 ```
     
-Plot by latitude.
+Plot by latitude and longitude, just because we can.
 
 ```{r}
 library(ggplot2)
@@ -333,9 +333,11 @@ ggplot(xgridded, aes(longitude, richness)) + geom_point() + theme_bw()
 
 Plot a basic map of species richness.  People with skills in R plotting will be able to do a better job than this.
 
+You could also connect it with phylogenetic data.  There are many tools to do so, but it is easily done in Biodiverse.  
+
 
 ```{r}
-#  grid it up and plot richness patterns
+#  plot richness patterns
 
 map("worldHires", "Australia", xlim=c(105, 155), ylim=c(-45, -10), col="gray90", fill=TRUE)
 palette (terrain.colors(max(xgridded$richness)/3))
