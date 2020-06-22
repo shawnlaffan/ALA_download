@@ -274,7 +274,7 @@ collated_fname <- paste0(dir, "/collated.csv")
 
 df <- read.csv(collated_fname)
 
-# plot (df$x, df$y)
+plot (df$x, df$y)
 
 
 
@@ -295,16 +295,8 @@ xgridded <- collated_df %>%
     ## bin into 0.5-degree bins
     mutate(longitude=round(longitude*2)/2, latitude=round(latitude*2)/2) %>%
 
-    ## average environmental vars within each bin
-    # group_by(longitude,latitude) %>%
-    # mutate(precipitationAnnual=mean(precipitationAnnual, na.rm=TRUE),
-    #        temperatureAnnualMaxMean=mean(temperatureAnnualMaxMean, na.rm=TRUE)) %>%
-
     ## subset to vars of interest
-    dplyr::select(longitude, latitude, scientificName
-                  # , precipitationAnnual,
-                  # temperatureAnnualMaxMean
-                  ) %>%
+    dplyr::select(longitude, latitude, scientificName) %>%
 
     ## take one row per cell per species (presence)
     distinct() %>%
