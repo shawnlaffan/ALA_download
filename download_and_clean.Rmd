@@ -339,7 +339,7 @@ You could also connect it with phylogenetic data.  There are many tools to do so
 ```{r}
 #  plot richness patterns
 
-map("worldHires", "Australia", xlim=c(105, 155), ylim=c(-45, -10), col="gray90", fill=TRUE)
+maps::map("worldHires", "Australia", xlim=c(105, 155), ylim=c(-45, -10), col="gray90", fill=TRUE)
 palette (terrain.colors(max(xgridded$richness)/3))
 with(xgridded, points(longitude, latitude, pch=21, 
                       col=richness, bg=richness,
