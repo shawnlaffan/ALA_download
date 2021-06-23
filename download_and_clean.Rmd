@@ -151,9 +151,9 @@ for (dir in names(taxon_list)) {
   write.csv(occ, file=csv_fname)
 
   if (nrow(collated_df) == 0) {
-    collated_df = subset
+    collated_df = occ
   } else {
-    collated_df = rbind (collated_df, subset)
+    collated_df = rbind (collated_df, occ)
   }
   
   #  we could also save and re-use the occ df as an RDS file
