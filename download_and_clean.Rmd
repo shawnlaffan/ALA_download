@@ -39,6 +39,7 @@ The data quality filter uses the default ALA profile to strip out low quality re
 #  data from the ALA - you need to provide one
 email_address <- ""
 if (email_address == "") {message ("EMAIL ADDRESS NOT SET")}
+ala_config(email=email_address)
 
 #  make sure we use a local cache on the EcoCloud
 if (Sys.getenv("USER") == "jovyan") {
