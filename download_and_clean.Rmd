@@ -147,6 +147,7 @@ for (dir in names(taxon_list)) {
   colnames(coords_albers) = c("x","y")
   occ = cbind(occ, coords_albers)
 
+  csv_fname = paste0(dir, "/", taxon, ".csv")
   write.csv(occ, file=csv_fname)
 
   if (nrow(collated_df) == 0) {
