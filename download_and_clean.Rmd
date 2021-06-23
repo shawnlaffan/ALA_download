@@ -94,7 +94,7 @@ selection_filters <- select_filters(
 
 ```
 
-```{r}
+```{r taxon_list}
 
 #  Edit as needed.  Some can be case sensitive, 
 #  so check the ALA website to be certain.
