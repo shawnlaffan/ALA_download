@@ -86,8 +86,10 @@ subset_colnames <- c(
 column_subset <- select_columns(group = "basic")
 
 selection_filters <- select_filters(
-    basisOfRecord = "HumanObservation",
-    profile = "ALA")
+  #  throws an error on ecocloud
+  # basisOfRecord = "HumanObservation",  
+  profile = "ALA"
+)
 
 
 ```
