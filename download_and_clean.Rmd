@@ -11,35 +11,43 @@ http://www.crcnetbase.com/doi/abs/10.1201/9781315373096-2
 
 That code was in turn adapted from code written by Hugh Burley, who adapted code from Nick dos Remedios at the ALA.
 
-Later additions have cribbed from https://atlasoflivingaustralia.github.io/ALA4R/articles/ALA4R.html
+Later additions have cribbed from https://atlasoflivingaustralia.github.io/ALA4R/articles/ALA4R.html and https://atlasoflivingaustralia.github.io/galah/articles/galah.html 
 
-```{r}
-library (ALA4R)
+```{r setup}
+library (galah)
 library (stringr)
 library (rgdal)
+library(sf)
 library(maps)
 library(mapdata)
 library(dplyr)
+library(tidyr)
+library(ggplot2)
 #  needs additional system level libs for this to work
 # library (CoordinateCleaner)
 ```
 
-Configuration section
+Configuration section, including filters.
+
+The location filter is a simple rectangular bounding box.  
+The data quality filter uses the default ALA profile to strip out low quality records.  This gets most of them, but not all.
+
 
 ```{r}
 
 #  An email address is needed to download
 #  data from the ALA - you need to provide one
 email_address <- ""
+if (email_address == "") {message ("EMAIL ADDRESS NOT SET")}
 
 #  make sure we use a local cache on the EcoCloud
 if (Sys.getenv("USER") == "jovyan") {
   dir.create("~/ala_cache", showWarnings=FALSE)
   ala_config(cache_directory="~/ala_cache")
 }
-ala_config (caching="on")
+ala_config (caching=TRUE)
 # ala_config (caching="off")
-ala_config(warn_on_empty=TRUE)
+# ala_config(warn_on_empty=TRUE)
 
 #  search spatialreference.org for coordinate system definitions
 in_prj  <- paste0("+init=epsg:4326") # WGS84 in decimal degrees
@@ -64,31 +72,35 @@ for (key in names(bb)) {
   bbox <- gsub (key, bb[key], bbox)
 }
 
+location_filter <- select_locations(query = bbox)
+
 
 #  these are the colnames we want in the output
 subset_colnames <- c(
   "id",     "x",     "y",       "scientificName",
   "family", "genus", "species", "rank", 
   "coordinateUncertaintyInMetres",
-  "longitude", "latitude"
+  "decimalLongitude", "decimalLatitude"
 )
+
+column_subset <- select_columns(group = "basic")
+
+selection_filters <- select_filters(
+    basisOfRecord = "HumanObservation",
+    profile = "ALA")
+
 
 ```
 
 ```{r}
 
-#  Edit as needed.  Some can be case sensitive, so check the ALA website to be certain.
+#  Edit as needed.  Some can be case sensitive, 
+#  so check the ALA website to be certain.
+#  We also need a kingdom for Corymbia because there
+#  is a suppressed homonym from the Coleoptera
 taxon_list <- list (
-#   "Araneae"     = "order:ARANEAE",
-#   "Daviesia"    = c("genus:Daviesia"),
-#   "Acacia"      = c("genus:Acacia"),
-#   
-   #"Amphibians" = c("family:Hylidae", "family:Myobatrachidae", "family:Microhylidae")
-  #"Amphibians" = c("family:Hylidae"),
-  # "Bats" = c("molossidae")
-  # "Eucs" = c("genus:Corymbia", "genus:Eucalyptus", "genus:Angophora")
-  "Eucs" = c("genus:Corymbia")
-  
+  "Corymbia"   
+    = list (genus = "Corymbia", kingdom="Plantae")
 )
 
 taxon_list
@@ -99,164 +111,55 @@ Note that the directories will be in your current working directory.
 
 ```{r}
 
+
+
 for (dir in names(taxon_list)) {
   if (!dir.exists(dir)) {
     print (paste("Creating directory", dir))
     dir.create(dir, showWarnings = TRUE)
-    #print (dir.exists(dir))
   }
 
   collated_df = data.frame()
   
-  search_term_vec = taxon_list[[dir]]
-  for (i in 1:length(search_term_vec)) { 
-    search_term = search_term_vec[i]
-    
-    rank  = NA
-    taxon = search_term
-    # hell clunky way of finding a colon
-    if (grepl (pattern = ":", x = search_term, fixed=TRUE)) {
-      parts = str_split(search_term, pattern = ":")
-      rank  = parts[[1]][1]
-      taxon = parts[[1]][2]
-    }
-    
-    rds_fname = paste0(dir, "/", taxon, "_ALA_records.rds")
-    csv_fname = paste0(dir, "/", taxon, ".csv")
-    
-    #  skip existing files
-    if (file.exists (csv_fname)) {
-      print (paste (taxon, ": csv file exists, skipping download"))
+  search_term = taxon_list[[dir]]
 
-      if (length(search_term_vec) > 0) {
-        
-        ala = readRDS(rds_fname)
-        if (nrow(ala)) {
-          subset = ala[,subset_colnames]
-          if (nrow(collated_df) == 0) {
-            collated_df = subset
-          } else {
-            collated_df = rbind (collated_df, subset)
-          }
-        }
-      }
-      #  go to next iteration of loop
-      next
-    }
+  print (paste0 ("Search term is ", paste (search_term)))
 
-    print (paste0 ("Downloading data for ", taxon))
-    print (paste0 ("Search term is ", search_term))
-    
-    ala = data.frame()
-    # browser()
-    ala = occurrences(
-      taxon=search_term, 
-      wkt=bbox, 
-      download_reason_id=7, 
-      email = email_address
-    )
-  
-    print (dim (ala$data))
-  
-    if(is.na(ala) || !is.data.frame(ala$data)){
-      print (paste("unable to download records for", taxon))
-      failed = append(failed, taxon)
-      next
-    }
+  occ <- ala_occurrences(
+    taxa      = select_taxa(query = search_term),
+    filters   = selection_filters,
+    locations = location_filter,
+    columns   = column_subset
+  )
 
-    #  filter valid and non-empty data frames
-    if (nrow(ala$data) > 0) {
-      # Remove records missing Lat/Long information
-      print ("Stripping invalid coords")
-      ala$data = ala$data[!(is.na(ala$data$longitude) | is.na(ala$data$latitude)),]
-      print (paste ("Rows remaining:", nrow(ala$data)))
-      # Remove records that checks indicate are "fatal" (suspicious).
-      print ("Checking assertions")
-      xa <- check_assertions(ala)
-      # Columns of x corresponding to a fatal assertion
-      x_afcols <- names(ala$data) %in% xa$occurColnames[xa$fatal]                      
-      # Rows of x that have a fatal assertion
-      if (sum(x_afcols) > 1) { 
-        x_afrows <- which(apply(ala$data[, x_afcols], 1, any))
-      } else {  
-        x_afrows <- ifelse (
-          sum(x_afcols) == 1, 
-          which(ala$data[, x_afcols]), 
-          NA
-        )
-      }
-      # Reduce to the "clean" data (data rows without fatal assertions)
-      if (!any (is.na (x_afrows))) {
-        ala$data = ala$data[-x_afrows, ] 
-      }
-      
-      #  we only care about the data frame from here
-      ala = ala$data
-      
-      # Restrict this dataset to only those from Australia
-      print ("Excluding records outside bounding box")
-      ala = ala[ala$longitude >= bb["w"] & ala$longitude <= bb["e"]
-                & ala$latitude >= bb["s"] & ala$latitude <= bb["n"], ]
-      print (paste ("Rows remaining:", nrow(ala)))
-      # Retain only records with reasonable (<10000m) spatial uncertainty
-      #  (still includes NA's)
-      print ("Subsetting for coord uncertainty constraint")
-      ala <- ala[!is.na(ala$coordinateUncertaintyInMetres)
-                 & ala$coordinateUncertaintyInMetres <= 10000 
-                 # & !ala$coordinateUncertaintyInMetres %in% c(1,2,3,4)
-                 , ]
-      print (paste ("Rows remaining:", nrow(ala)))
-      
-      
-      #  coordinatecleaner time
-      ##
-      # rl <- clean_dataset(ala)
-      # ala$dataset = ala$species
-      # rl <- clean_dataset(x=ala, lon="longitude", lat="latitude")
-      
-      if (nrow(ala)) {
-        #  add some albers coords
-        coords_ll = ala[c("longitude", "latitude")]
-        #str(coords_ll)
-        coordinates(coords_ll) = coords_ll
-        proj4string(coords_ll) = CRS(in_prj)
-        coords_albers = as.data.frame(spTransform(coords_ll, CRS=CRS(out_prj)))[, 3:4]
-        colnames(coords_albers) = c("x","y")
-        #head(coords_albers)
-        ala$x = coords_albers$x
-        ala$y = coords_albers$y
-      } else {
-        ala$x = numeric()
-        ala$y = numeric()
-      }
-    } else {
-      #browser()
-      ala = ala$data
-      ala$x = numeric()
-      ala$y = numeric()
-      #print (colnames(ala))
-    }
+  head(occ)
+  print (dim (occ))
 
+  coords_ll = occ[c("decimalLongitude", "decimalLatitude")] %>% 
+    as.data.frame %>% 
+    sf::st_as_sf(coords = c(1,2), crs=in_prj)
 
-    if (nrow(ala) > 0) {
-      subset = ala[,subset_colnames]
-      write.csv(subset, file=csv_fname)
+  #  no doubt this could be dplyrd
+  coords_albers = st_transform(coords_ll, crs = st_crs(out_prj))
+  coords_albers = st_coordinates(coords_albers)
+  colnames(coords_albers) = c("x","y")
+  occ = cbind(occ, coords_albers)
 
-      if (nrow(collated_df) == 0) {
-        collated_df = subset
-      } else {
-        collated_df = rbind (collated_df, subset)
-      }
-    } else {
-      write.csv(data.frame(), file=csv_fname)
-    }
-  
-    saveRDS(ala, file=rds_fname)
+  write.csv(occ, file=csv_fname)
+
+  if (nrow(collated_df) == 0) {
+    collated_df = subset
+  } else {
+    collated_df = rbind (collated_df, subset)
   }
+  
+  #  we could also save and re-use the occ df as an RDS file
 
-  collated_fname = paste0(dir, "/collated.csv")
-  write.csv (collated_df, collated_fname)
 }
+
+collated_fname = paste0(dir, "/collated.csv")
+write.csv (collated_df, collated_fname)
+
     
 ```
    
@@ -352,6 +255,6 @@ Things to try:
 
 See if you can edit the code above to use config variables,
 i.e. instead of hard coding the error tolerance at 10000, 
-why not set it in the config section?
+why not set it in the config section? See the galah help pages for how to set filters.
 
 You might also wish to plot the data sets before they are filtered to get a sense of where the errors are.  
