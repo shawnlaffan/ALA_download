@@ -24,6 +24,7 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 #  needs additional system level libs for this to work
+#  update - perhaps not any more but needs testing across platforms
 # library (CoordinateCleaner)
 ```
 
@@ -39,15 +40,19 @@ The data quality filter uses the default ALA profile to strip out low quality re
 #  data from the ALA - you need to provide one
 email_address <- ""
 if (email_address == "") {message ("EMAIL ADDRESS NOT SET")}
-ala_config(email=email_address)
+galah_config(email=email_address)
 
 #  make sure we use a local cache on the EcoCloud
 if (Sys.getenv("USER") == "jovyan") {
-  dir.create("~/ala_cache", showWarnings=FALSE)
-  ala_config(cache_directory="~/ala_cache")
+  # dir.create("~/ala_cache", showWarnings=FALSE)
+  galah_config(cache_directory="~/ala_cache")
 }
-ala_config (caching=TRUE)
-# ala_config (caching="off")
+if (!dir.exists(galah_config()$cache_directory)) {
+  message ("Creating cache directory ", galah_config()$cache_directory)
+  dir.create(galah_config()$cache_directory)
+}
+galah_config (caching=TRUE)
+# ala_config (caching=FALSE)
 # ala_config(warn_on_empty=TRUE)
 
 #  search spatialreference.org for coordinate system definitions
@@ -73,7 +78,7 @@ for (key in names(bb)) {
   bbox <- gsub (key, bb[key], bbox)
 }
 
-location_filter <- select_locations(query = bbox)
+location_filter <- galah_geolocate(query = bbox)
 
 
 #  these are the colnames we want in the output
@@ -84,11 +89,11 @@ subset_colnames <- c(
   "decimalLongitude", "decimalLatitude"
 )
 
-column_subset <- select_columns(group = "basic")
+# column_subset <- select_columns(group = "basic")
+column_subset <- galah_select(group = "basic", coordinateUncertaintyInMeters)
 
-selection_filters <- select_filters(
-  #  throws an error on ecocloud
-  # basisOfRecord = "HumanObservation",  
+selection_filters <- galah_filter(
+  coordinateUncertaintyInMeters < 10000,
   profile = "ALA"
 )
 
@@ -102,8 +107,9 @@ selection_filters <- select_filters(
 #  We also need a kingdom for Corymbia because there
 #  is a suppressed homonym from the Coleoptera
 taxon_list <- list (
-  "Corymbia"   
-    = list (genus = "Corymbia", kingdom="Plantae")
+  # "Corymbia"   
+  #   = list (genus = "Eucalyptus", kingdom="Plantae")
+  "Eucalyptus" = "Eucalyptus"
 )
 
 taxon_list
@@ -128,11 +134,15 @@ for (dir in names(taxon_list)) {
 
   print (paste0 ("Search term is ", paste (search_term)))
 
-  occ <- ala_occurrences(
-    taxa      = select_taxa(query = search_term),
-    filters   = selection_filters,
-    locations = location_filter,
-    columns   = column_subset
+  
+  #identifier = search_taxa("Eucalyptus")
+  identifier = search_taxa(search_term)
+  occ = atlas_occurrences(
+    # identify = galah_identify(search_term),
+    identify  = identifier,
+    filter    = selection_filters,
+    geolocate = location_filter,
+    select    = column_subset
   )
 
   head(occ)
@@ -144,7 +154,7 @@ for (dir in names(taxon_list)) {
 
   #  no doubt this could be dplyrd
   coords_albers = st_transform(coords_ll, crs = st_crs(out_prj))
-  coords_albers = st_coordinates(coords_albers)
+  coords_albers = st_coordinates(coords_albers, coords=c("X","Y"))
   colnames(coords_albers) = c("x","y")
   occ = cbind(occ, coords_albers)
 
@@ -174,14 +184,16 @@ Perhaps try to make something more aesthetically pleasing to the eye.
 
 ```{r}
 
-dir <- names(taxon_list)[1]
-dir 
+# dir <- names(taxon_list)[1]
+# dir 
+# 
+# collated_fname <- paste0(dir, "/collated.csv")
+# 
+# df <- read.csv(collated_fname)
+# 
+# plot (df$x, df$y)
 
-collated_fname <- paste0(dir, "/collated.csv")
-
-df <- read.csv(collated_fname)
-
-plot (df$x, df$y)
+plot (collated_df$x, collated_df$y)
 
 
 
@@ -196,11 +208,11 @@ https://atlasoflivingaustralia.github.io/ALA4R/articles/ALA4R.html
 ```{r}
 xgridded <- collated_df %>%
     ## discard genus- and higher-level records
-    dplyr::filter(rank %in%
-                  c("species")) %>%
+    # dplyr::filter(rank %in%
+    #               c("species")) %>%
 
     ## bin into 0.5-degree bins
-    mutate(longitude=round(longitude*2)/2, latitude=round(latitude*2)/2) %>%
+    mutate(longitude=round(decimalLongitude*2)/2, latitude=round(decimalLatitude*2)/2) %>%
 
     ## subset to vars of interest
     dplyr::select(longitude, latitude, scientificName) %>%
@@ -246,19 +258,19 @@ You could also connect it with phylogenetic data.  There are many tools to do so
 ```{r}
 #  plot richness patterns
 
-maps::map("worldHires", "Australia", xlim=c(105, 155), ylim=c(-45, -10), col="gray90", fill=TRUE)
-palette (terrain.colors(max(xgridded$richness)/3))
-with(xgridded, points(longitude, latitude, pch=21, 
-                      col=richness, bg=richness,
-                      cex=0.75))
+aus <- map_data("worldHires", "Australia")
+aus <- aus[is.na(aus$subregion),]  #  subset to mainland and Tas
+ggplot() + 
+  geom_polygon(data = aus, aes(x=long, y = lat, group = group), fill="grey") +
+  coord_fixed(1.3) +
+  geom_point(data = xgridded, aes(x = longitude, y = latitude, colour=log(richness)), size = 1)
 
 ```
 
     
 Things to try:
 
-See if you can edit the code above to use config variables,
-i.e. instead of hard coding the error tolerance at 10000, 
-why not set it in the config section? See the galah help pages for how to set filters.
+See if you can edit the code above to change the filters.
+i.e. what happens if you use a different the coordinate uncertainty tolerance instead of 10,000? 
 
-You might also wish to plot the data sets before they are filtered to get a sense of where the errors are.  
+You might also wish to plot the data sets before they are filtered to get a sense of where the errors are.
