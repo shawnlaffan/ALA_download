@@ -13,6 +13,8 @@ That code was in turn adapted from code written by Hugh Burley, who adapted code
 
 Later additions have cribbed from https://atlasoflivingaustralia.github.io/ALA4R/articles/ALA4R.html and https://atlasoflivingaustralia.github.io/galah/articles/galah.html 
 
+You need to ensure your email address matches one registered with the ALA.  Signup can be done at ala.org.au.
+
 ```{r setup}
 library (galah)
 library (stringr)
@@ -38,6 +40,7 @@ The data quality filter uses the default ALA profile to strip out low quality re
 
 #  An email address is needed to download
 #  data from the ALA - you need to provide one
+#  and it must be one registered with the ALA
 email_address <- ""
 if (email_address == "") {message ("EMAIL ADDRESS NOT SET")}
 galah_config(email=email_address)
